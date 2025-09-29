@@ -70,10 +70,10 @@ def check_packet(pkt):
             print(f"\n[ALERT] High DISCOVER rate (last 60 seconds): {rate}/min")
             print(f"        Last MACs: {list(macs)[-3:]}")
         
-        #if len(macs) > 20:
-        #    if all(m[:8] == "00:0c:29" for m in list(macs)[-20:]):
-        #        score += 3
-        #        print(f"[ALERT] VMware pattern detected - Last 20 MAC vendors VMware")
+        if len(macs) > 20:
+            if all(m[:8] == "00:0c:29" for m in list(macs)[-20:]):
+                score += 3
+                print(f"[ALERT] VMware pattern detected - Last 20 MAC vendors VMware")
     
     elif msg_type == 5:  # ACK 
         # BOOTP.chaddr first 6 bytes = MAC
