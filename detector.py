@@ -17,6 +17,24 @@ max_discover_rate_small = 0.7 # 7 leases in last 10s
 score_decay = 1.0
 last_score_update = time.time()
 
+leased_macs = {}
+mac_last_active = {}
+inactive_grace_period = 10 # 10s for client to be active after lease
+inactive_thresh = 20 # No traffic for more than 20s = inactive
+inactive_macs_alarm = 10
+
+def count_idle(): # Helper fxn for Attack Detected alarm info
+    idle_count = 0
+    now = time.time()
+    for mac, info in leased_macs.items():
+        lease_t = info['lease_time']
+        if now - lease_t < inactive_grace_period:
+            continue  
+        last_act = mac_last_active.get(mac, 0.0)
+        if last_act < lease_t or (now - last_act) > inactive_thresh:
+            idle_count += 1
+    return idle_count
+
 def check_packet(pkt):
     global naks, score, last_score_update, discover_small_count
     
@@ -52,10 +70,21 @@ def check_packet(pkt):
             print(f"\n[ALERT] High DISCOVER rate (last 60 seconds): {rate}/min")
             print(f"        Last MACs: {list(macs)[-3:]}")
         
-        if len(macs) > 20:
-            if all(m[:8] == "00:0c:29" for m in list(macs)[-20:]):
-                score += 3
-                print(f"[ALERT] VMware pattern detected - Last 20 MAC vendors VMware")
+        #if len(macs) > 20:
+        #    if all(m[:8] == "00:0c:29" for m in list(macs)[-20:]):
+        #        score += 3
+        #        print(f"[ALERT] VMware pattern detected - Last 20 MAC vendors VMware")
+    
+    elif msg_type == 5:  # ACK 
+        # BOOTP.chaddr first 6 bytes = MAC
+        chaddr = pkt[BOOTP].chaddr
+        client_mac = ":".join(f"{b:02x}" for b in chaddr[:6])
+        leased_ip = pkt[BOOTP].yiaddr
+        leased_macs[client_mac] = {'ip': leased_ip, 'lease_time': now}
+        mac_last_active.setdefault(client_mac, now)
+        print(f"[LEASE] {client_mac} was leased {leased_ip}")
+
+
                 
     elif msg_type == 6:  # NAK
         naks += 1
@@ -75,8 +104,9 @@ def check_packet(pkt):
         print(f"[ATTACK DETECTED]")
         print(f"  MACs: {len(macs)}")
         print(f"  Rate (last 60s): {len(discovers)}/min")
-        print(f"  Rate (last 10s): {discover_small_count}/10s")
+        print(f"  Rate (last {small_window_s}s): {discover_small_count}/{small_window_s}s")
         print(f"  NAKs: {naks}")
+        print(f"  Idle leased clients (idle for >{inactive_thresh}s): {count_idle()}")
         
         bad_macs = [m for m,c in mac_counts.items() if c > 3]
         if bad_macs:
@@ -92,9 +122,56 @@ def status():
         time.sleep(10)
         print(f"[STATUS] Discovers (60s): {len(discovers)} | Discovers (10s): {discover_small_count}")
         print(f"[STATUS] MACs: {len(macs)} | NAKs: {naks} | Threat Score: {score}")
+        
+def sniff_activity(pkt):
+    if DHCP in pkt: # Check for non-DHCP traffic
+        return
+
+    now = time.time()
+    
+    if Ether in pkt:
+        mac = pkt[Ether].src
+        if mac in leased_macs:
+            mac_last_active[mac] = now
+            return
+
+    # Fallback to IP
+    if IP in pkt:
+        src_ip = pkt[IP].src
+        for mac, info in leased_macs.items():
+            if info['ip'] == src_ip:
+                mac_last_active[mac] = now
+                return
+            
+def detect_inactivity():
+    global score
+    while True:
+        time.sleep(5)
+        now = time.time()
+        idle_macs = []
+        
+        for mac, info in leased_macs.items():
+            lease_t  = info['lease_time']
+            if now - lease_t < inactive_grace_period:
+                continue
+
+            last_act = mac_last_active.get(mac, 0.0)
+            if last_act < lease_t or (now - last_act) > inactive_thresh:
+                idle_macs.append(mac)
+
+        if len(idle_macs) >= inactive_macs_alarm:
+            score += 10
+            print(f"\n[ALERT] idle leased clients: {len(idle_macs)} (≥{inactive_thresh})")
+            for m in idle_macs[:5]:
+                print(f"    idle: {m} ({leased_macs[m]['ip']})")
+            print()
+
+
 import threading
-t = threading.Thread(target=status, daemon=True)
-t.start()
+threading.Thread(target=status, daemon=True).start()
+threading.Thread(target=lambda: sniff(iface=iface, store=0, prn=sniff_activity, filter="not (udp and (port 67 or port 68))"),daemon=True).start()
+threading.Thread(target=detect_inactivity, daemon=True).start()
+
 
 print(f"[*] Monitor on {iface}")
 print(f"[*] Threshold: {threshold}/min\n")
