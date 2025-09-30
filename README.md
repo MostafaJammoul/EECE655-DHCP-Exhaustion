@@ -2,11 +2,11 @@
 
 ## Overview
 
-This repository contains materials and scripts for a project on DHCP exhaustion / starvation attacks and detection. The project demonstrates how to saturate a DHCP server's IP address pool through a starvation attack, how to detect such an attack, and includes annotated versions of the scripts and supporting materials.
+This repository contains materials and scripts for a project on DHCP exhaustion / starvation attacks and detection. The project demonstrates how to compromise a DHCP server's IP address pool through a starvation attack, how to detect such an attack, the evolutions of both the attacker and detector over 3 rounds, and includes annotated versions of the scripts to pinpoint authors, as well as supporting materials.
 
 ## Repository structure
 
-* **Ai_prompts/** – Assignment documents and research articles provided by instructors (e.g., `Assignment overview EECE655.pdf`, `DHCP starvation game theory.pdf`).
+* **Ai_prompts/** – Prompts and outputs between us (Authors Mostafa Jammoul and Omar Kaaki) and LLMs (ChatGPT) ( `Assignment overview EECE655.pdf`, `DHCP starvation game theory.pdf`).
 * **scripts_by_rounds/** – Organized baseline and round-specific scripts:
 
   * `scripts_by_rounds/DHCP_Server.py` — DHCP server implementation (baseline).
@@ -22,16 +22,13 @@ This repository contains materials and scripts for a project on DHCP exhaustion 
     * `detector-round2.py`
     * `detector-round3.py`
       These scripts depend on the `scapy` library and must be run with administrative/root privileges.
-* **annotated_scripts_by_author/** – Annotated/finalized scripts with inline explanations:
+* **annotated_scripts_by_author/** – Annotated scripts to pinpoint function/section authors (NOTE THAT these scripts are not meant to be run, as they only serve informative reasons):
 
   * `annotated_DHCP_Server.py`
   * `annotated_attacker_final.py`
   * `annotated_detector_final.py`
-    These annotated script files explain the code, packet flow, and detection logic step-by-step.
 * **EECE655_DHCP_Exhaustion_Report.pdf** – Project report describing objectives, methodology, results, and conclusions.
 * **LICENSE** – License file for the project.
-
-> **Note:** If you later add large media files (video, VM images) >100 MB, use Git LFS before pushing them.
 
 ## Requirements
 
@@ -41,7 +38,7 @@ This repository contains materials and scripts for a project on DHCP exhaustion 
   ```bash
   pip install scapy
   ```
-* Administrative / root privileges to run network scripts (use `sudo` on Linux/macOS).
+* Administrative / root privileges to run network scripts (use `sudo` on Linux/macOS, run command prompt or powershell as administrator on Windows).
 
 ## Usage
 
@@ -82,11 +79,8 @@ sudo python3 scripts_by_rounds/detector/detector-round1.py -i <interface>
 
 Replace `<interface>` with your network interface identifier (for example `eth0`, `enp3s0`, or `wlan0`).
 
-For step-by-step explanations, review the annotated implementations in `annotated_scripts_by_author/` (they correspond to the server, attacker, and detector).
-
 ## Notes
 
 * Attacker scripts typically spoof many MAC addresses and send DHCP DISCOVER/REQUEST messages at configurable intervals to exhaust the DHCP server's lease pool.
 * Detector scripts listen for DHCP traffic and flag suspicious patterns, such as a high number of unique MACs requesting leases in a short time, or server lease exhaustion.
 * For full methodology, data, and results, see **EECE655_DHCP_Exhaustion_Report.pdf**.
-
