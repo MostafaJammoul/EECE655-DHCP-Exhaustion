@@ -6,6 +6,8 @@ This repository contains materials and scripts for a project on DHCP exhaustion 
 
 ## Repository structure
 
+* **onedrive_demoVideo_link.txt** - Contains the OneDrive link for our demo video, presenting the attacker/detector scripts in action and round-by-round.
+
 * **Ai_prompts/** – Prompts and outputs between us (Authors Mostafa Jammoul and Omar Kaaki) and LLMs (ChatGPT) ( `Assignment overview EECE655.pdf`, `DHCP starvation game theory.pdf`).
 * **scripts_by_rounds/** – Organized baseline and round-specific scripts:
 
