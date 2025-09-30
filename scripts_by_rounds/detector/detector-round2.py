@@ -23,14 +23,6 @@ inactive_grace_period = 10 # 10s for client to be active after lease
 inactive_thresh = 20 # No traffic for more than 20s = inactive
 inactive_macs_alarm = 10
 
-leased_ips = set()
-comm_with_external = {}
-per_mac_non_dhcp_pkts = {}
-subnet_comm_only_grace = 15 # Wait 15s before judging new leasers
-subnet_only_macs_alarm = 15 # Alarm if >= 15 clients only comm in subnet
-min_consideration_pkts = 3
-
-
 def count_idle(): # Helper fxn for Attack Detected alarm info
     idle_count = 0
     now = time.time()
@@ -42,20 +34,6 @@ def count_idle(): # Helper fxn for Attack Detected alarm info
         if last_act < lease_t or (now - last_act) > inactive_thresh:
             idle_count += 1
     return idle_count
-
-def count_not_external_comm(): # Helper fxn for Attack Detected alarm info
-    now = time.time()
-    subnet_only = []
-    for mac, info in leased_macs.items():
-        lease_t = info['lease_time']
-        if now - lease_t < subnet_comm_only_grace:
-            continue
-        total_pkts = per_mac_non_dhcp_pkts.get(mac, 0)
-        if total_pkts < min_consideration_pkts:
-            continue
-        if not comm_with_external.get(mac, False):
-            subnet_only.append(mac)   
-    return len(subnet_only) 
 
 def check_packet(pkt):
     global naks, score, last_score_update, discover_small_count
@@ -70,7 +48,6 @@ def check_packet(pkt):
             break
     
     now = time.time()
-    
     diff = now - last_score_update
     if diff > 0:
         score = max(0, score-int(score_decay*diff))
@@ -83,7 +60,7 @@ def check_packet(pkt):
         mac_counts[mac] += 1
         
         # Clean old
-        while discovers and discovers[0] < now - 60:
+        while discovers and discovers[0] < now - 120:
             discovers.pop(0)
         
         rate = len(discovers)
@@ -106,10 +83,6 @@ def check_packet(pkt):
         leased_macs[client_mac] = {'ip': leased_ip, 'lease_time': now}
         mac_last_active.setdefault(client_mac, now)
         print(f"[LEASE] {client_mac} was leased {leased_ip}")
-        
-        leased_ips.add(leased_ip)
-        comm_with_external.setdefault(client_mac, False)
-        per_mac_non_dhcp_pkts.setdefault(client_mac, 0)
 
 
                 
@@ -124,7 +97,7 @@ def check_packet(pkt):
     
     if small_rate >= max_discover_rate_small: # More than 7 leases in last 10s
         score += 2
-        print(f"[ALERT] High DISCOVER rate (last 10 seconds): {discover_small_count}/10s ")
+        print(f"[ALERT] High DISCOVER rate (last 10 seconds): {small_rate}/10s ")
     
     if score >= 10:
         print(f"\n{'='*50}")
@@ -134,7 +107,6 @@ def check_packet(pkt):
         print(f"  Rate (last {small_window_s}s): {discover_small_count}/{small_window_s}s")
         print(f"  NAKs: {naks}")
         print(f"  Idle leased clients (idle for >{inactive_thresh}s): {count_idle()}")
-        print(f"  Clients without outside subnet communcation (since detetcor boot): {count_not_external_comm()}")
         
         bad_macs = [m for m,c in mac_counts.items() if c > 3]
         if bad_macs:
@@ -148,8 +120,11 @@ def check_packet(pkt):
 def status():
     while True:
         time.sleep(10)
+        print()
         print(f"[STATUS] Discovers (60s): {len(discovers)} | Discovers (10s): {discover_small_count}")
         print(f"[STATUS] MACs: {len(macs)} | NAKs: {naks} | Threat Score: {score}")
+        print(f"[STATUS] Idle Clients: {count_idle()}")
+        print()
         
 def sniff_activity(pkt):
     if DHCP in pkt: # Check for non-DHCP traffic
@@ -158,26 +133,18 @@ def sniff_activity(pkt):
     now = time.time()
     
     if Ether in pkt:
-        src_mac = pkt[Ether].src
-        if src_mac in leased_macs:
-            mac_last_active[src_mac] = now
-            
-            per_mac_non_dhcp_pkts[src_mac] = per_mac_non_dhcp_pkts.get(src_mac, 0)+1
+        mac = pkt[Ether].src
+        if mac in leased_macs:
+            mac_last_active[mac] = now
+            return
 
+    # Fallback to IP
     if IP in pkt:
         src_ip = pkt[IP].src
-        dst_ip = pkt[IP].dst
         for mac, info in leased_macs.items():
-            if info['ip'] == src_ip: #Fallback for last active in case Eth errored out
+            if info['ip'] == src_ip:
                 mac_last_active[mac] = now
-                if dst_ip not in leased_ips:
-                    comm_with_external[mac] = True
-                elif dst_ip in leased_ips:
-                    for mac_b, info_b in leased_macs.items():
-                        if info_b['ip'] == dst_ip:
-                            print(f"[TRAFFIC] {mac}//{src_ip} -> {mac_b}//{dst_ip}")
-                    
-            
+                return
             
 def detect_inactivity():
     global score
@@ -197,42 +164,16 @@ def detect_inactivity():
 
         if len(idle_macs) >= inactive_macs_alarm:
             score += 10
-            print(f"\n[ALERT] idle leased clients: {len(idle_macs)} (≥{inactive_macs_alarm})")
+            print(f"\n[ALERT] idle leased clients: {len(idle_macs)} (≥{inactive_thresh})")
             for m in idle_macs[:5]:
                 print(f"    idle: {m} ({leased_macs[m]['ip']})")
             print()
-            
-def detect_subnet_only():
-    global score
-    while True:
-        time.sleep(5)
-        now = time.time()
-        subnet_only = []
-        
-        for mac, info in leased_macs.items():
-            lease_t = info['lease_time']
-            if now - lease_t < subnet_comm_only_grace:
-                continue # Grace period for outside subnet comm
-            
-            total_pkts = per_mac_non_dhcp_pkts.get(mac, 0)
-            if total_pkts < min_consideration_pkts: # too little packets to judge
-                continue
-            
-            if not comm_with_external.get(mac, False):
-                subnet_only.append(mac)
-                
-        if len(subnet_only) >= subnet_only_macs_alarm:
-            score +=5
-            print(f"[ALERT] Clients with subnet-only comms: {len(subnet_only)} clients")
-            for m in subnet_only[:5]:
-                print(f"    {m} ({leased_macs[m]['ip']})")
-            print()                    
+
 
 import threading
 threading.Thread(target=status, daemon=True).start()
 threading.Thread(target=lambda: sniff(iface=iface, store=0, prn=sniff_activity, filter="not (udp and (port 67 or port 68))"),daemon=True).start()
 threading.Thread(target=detect_inactivity, daemon=True).start()
-threading.Thread(target=detect_subnet_only, daemon=True).start()
 
 
 print(f"[*] Monitor on {iface}")

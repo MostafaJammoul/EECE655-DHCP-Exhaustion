@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+
+### THIS IS NOT THE SCRIPT TO USE FOR IMPLEMENTATION              ###
+### SYNTAX ERRORS AND OBSOLETE CODE MAY HAVE BEEN OVERLOOKED HERE ###
+### USE SCRIPTS IN /scripts_by_rounds/attacker/                   ###
+
 # What I (omar) wrote:
 # - Overall program structure and flow (threads: listener/attacker), counters,
 #   bookkeeping lists/dicts, printing, timing, and shutdown handling.

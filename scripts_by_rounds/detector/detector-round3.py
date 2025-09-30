@@ -3,9 +3,6 @@ from scapy.all import *
 import time
 from collections import defaultdict
 
-# Author: Mostafa Jammoul
-# Globals to be used for later functions (When adding a function, the necessary globals were set)
-
 iface = "eth0"
 threshold = 30 # 30 leases in last minute
 discovers = []
@@ -13,9 +10,6 @@ macs = set()
 mac_counts = defaultdict(int)
 naks = 0
 score = 0
-
-# Authors: Mostafa and Omar
-# Same reasoning as globals above
 
 discover_small_count = 0
 small_window_s = 10
@@ -37,9 +31,6 @@ subnet_only_macs_alarm = 15 # Alarm if >= 15 clients only comm in subnet
 min_consideration_pkts = 3
 
 
-# Authors: Mostafa and Omar
-# We did this ourselves. Simple helper function for counting idle clients. (easy) 
-
 def count_idle(): # Helper fxn for Attack Detected alarm info
     idle_count = 0
     now = time.time()
@@ -51,9 +42,6 @@ def count_idle(): # Helper fxn for Attack Detected alarm info
         if last_act < lease_t or (now - last_act) > inactive_thresh:
             idle_count += 1
     return idle_count
-
-# Authors: Mostafa and Omar
-# Same as above, easy and simple helper function
 
 def count_not_external_comm(): # Helper fxn for Attack Detected alarm info
     now = time.time()
@@ -68,10 +56,6 @@ def count_not_external_comm(): # Helper fxn for Attack Detected alarm info
         if not comm_with_external.get(mac, False):
             subnet_only.append(mac)   
     return len(subnet_only) 
-
-# Author: Mostafa Jammoul
-# References: https://scapy.readthedocs.io/en/latest/api/scapy.layers.dhcp.html and https://github.com/yoelbassin/DHCP-starvation
-# Mostly done by myself, with some help debugging from chatGPT after I could not tell where I went wrong.
 
 def check_packet(pkt):
     global naks, score, last_score_update, discover_small_count
@@ -161,19 +145,15 @@ def check_packet(pkt):
         print(f"{'='*50}\n")
         score = 0
 
-
-# Author: Mostafa Jammoul
-# Simple function, I did it myself (easy)
-
 def status():
     while True:
         time.sleep(10)
+        print()
         print(f"[STATUS] Discovers (60s): {len(discovers)} | Discovers (10s): {discover_small_count}")
         print(f"[STATUS] MACs: {len(macs)} | NAKs: {naks} | Threat Score: {score}")
-
-
-# Authors: Mostafa and Omar
-# References: https://scapy.readthedocs.io/en/latest/usage.html and https://docs.suricata.io/en/latest/rules/dhcp-keywords.html
+        print(f"[STATUS] Idle clients: {count_idle()}")
+        print(f"[STATUS] Clients without external communication: {count_not_external_comm()}")
+        print()
         
 def sniff_activity(pkt):
     if DHCP in pkt: # Check for non-DHCP traffic
@@ -200,12 +180,9 @@ def sniff_activity(pkt):
                     for mac_b, info_b in leased_macs.items():
                         if info_b['ip'] == dst_ip:
                             print(f"[TRAFFIC] {mac}//{src_ip} -> {mac_b}//{dst_ip}")
-
-
-# Authors: Mostafa and Omar
-# We did this ourselves. Easy dictionary/list manipulation.
                     
-                     
+            
+            
 def detect_inactivity():
     global score
     while True:
@@ -228,9 +205,6 @@ def detect_inactivity():
             for m in idle_macs[:5]:
                 print(f"    idle: {m} ({leased_macs[m]['ip']})")
             print()
-
-# Authors: Mostafa and Omar
-# We did this ourselves. Same as above.
             
 def detect_subnet_only():
     global score
@@ -257,9 +231,6 @@ def detect_subnet_only():
             for m in subnet_only[:5]:
                 print(f"    {m} ({leased_macs[m]['ip']})")
             print()                    
-
-# Authors: Omar and Mostafa
-# We did this ourselves. chatGPT reminded us of threading syntax. Also scapy docs helped to know arguments.
 
 import threading
 threading.Thread(target=status, daemon=True).start()
